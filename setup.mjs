@@ -256,9 +256,15 @@ async function main() {
     'What language do you prefer for voice output?',
     [
       { label: 'English',            value: 'en', edgeVoice: 'en-US-AriaNeural' },
-      { label: 'Chinese (Mainland)', value: 'zh', edgeVoice: 'zh-CN-XiaoxiaoNeural' },
-      { label: 'Chinese (Taiwan)',   value: 'zh-TW', edgeVoice: 'zh-TW-HsiaoYuNeural' },
+      { label: 'Chinese (Simplified)', value: 'zh', edgeVoice: 'zh-CN-XiaoxiaoNeural' },
+      { label: 'Chinese (Traditional)', value: 'zh-TW', edgeVoice: 'zh-TW-HsiaoYuNeural' },
       { label: 'Japanese',           value: 'ja', edgeVoice: 'ja-JP-NanamiNeural' },
+      { label: 'Korean',             value: 'ko', edgeVoice: 'ko-KR-SunHiNeural' },
+      { label: 'French',            value: 'fr', edgeVoice: 'fr-FR-DeniseNeural' },
+      { label: 'German',            value: 'de', edgeVoice: 'de-DE-KatjaNeural' },
+      { label: 'Spanish',           value: 'es', edgeVoice: 'es-ES-ElviraNeural' },
+      { label: 'Portuguese',        value: 'pt', edgeVoice: 'pt-BR-FranciscaNeural' },
+      { label: 'Russian',           value: 'ru', edgeVoice: 'ru-RU-SvetlanaNeural' },
     ]
   );
   speak(`Language set to ${langChoice.label}.`);

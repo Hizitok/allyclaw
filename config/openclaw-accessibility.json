@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.openclaw.ai/config/schema",
+  "messages": {
+    "tts": {
+      "auto": "always",
+      "mode": "final",
+      "provider": "edge",
+      "edge": {
+        "enabled": true,
+        "voice": "en-US-AriaNeural",
+        "lang": "en-US",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+        "volume": "+0%"
+      },
+      "openai": {
+        "model": "tts-1",
+        "voice": "nova"
+      },
+      "elevenlabs": {
+        "voiceId": "Rachel",
+        "modelId": "eleven_multilingual_v2"
+      }
+    }
+  },
+  "ui": {
+    "theme": "system",
+    "fontSize": "large",
+    "reducedMotion": true,
+    "highContrast": true
+  },
+  "accessibility": {
+    "screenReaderOptimized": true,
+    "keyboardNavigation": true,
+    "announceErrors": true,
+    "announceActions": true
+  }
+}
