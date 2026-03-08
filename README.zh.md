@@ -100,3 +100,10 @@ git submodule update --init
 ## 许可证
 
 MIT
+
+
+## Buy Me A Coffee
+
+    Bitcoin: bc1pjd7gc79yw7fqek9w6fwlkw28ad52vu8v90s4vy9d52g5pja2nn5sp56kqn
+    ETH: 0xd799eba64aaf9cfd2169afc9685494a61d23012d
+    Solana: C324pWC11MtAyp9wkRAqJqVFduymb6QjJC4bsF9wrdkz
