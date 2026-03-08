@@ -2,13 +2,12 @@
 /**
  * AllyClaw Setup Script
  *
- * One-click accessible IronClaw configuration for visually impaired users.
+ * One-click accessible setup for OpenClaw or IronClaw.
  * Every prompt is spoken aloud via the system's built-in TTS — no screen
- * reader or mouse required to complete the setup.
+ * reader or mouse required.
  *
  * Platforms: Windows, macOS, Linux
- * Requirements: Node.js >= 18 (used only for this script; IronClaw itself
- *               is a native binary with no Node dependency)
+ * Requirements: Node.js >= 18
  */
 
 import { execSync, spawnSync } from 'child_process';
@@ -16,20 +15,16 @@ import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
 // ─── Platform TTS ─────────────────────────────────────────────────────────────
 
 const PLATFORM = process.platform; // 'win32' | 'darwin' | 'linux'
 
-/**
- * Speak text using the system's built-in TTS engine, then print it.
- * Printing ensures braille display users and terminal log readers also get it.
- */
 function speak(text) {
   console.log(`\n  ${text}`);
   const safe = text.replace(/['"\\`]/g, ' ');
   try {
     if (PLATFORM === 'win32') {
-      // Windows: PowerShell SpeechSynthesizer (no extra install needed)
       execSync(
         `powershell -NoProfile -NonInteractive -Command `+
         `"Add-Type -AssemblyName System.Speech; `+
@@ -39,7 +34,6 @@ function speak(text) {
     } else if (PLATFORM === 'darwin') {
       execSync(`say "${safe}"`, { stdio: 'ignore', timeout: 30_000 });
     } else {
-      // Linux: try each engine in order
       for (const cmd of [
         `espeak-ng "${safe}"`,
         `espeak "${safe}"`,
@@ -57,19 +51,16 @@ function speak(text) {
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-/** Ask a question aloud and wait for a line of input. */
 function ask(question) {
   speak(question);
   return new Promise(resolve => rl.question('  > ', answer => resolve(answer.trim())));
 }
 
-/** Yes/no confirmation. Empty input = yes. */
 async function confirm(question) {
   const a = await ask(`${question}  (press Enter for yes, type n then Enter for no)`);
   return a === '' || /^y/i.test(a);
 }
 
-/** Numbered menu. Returns the selected choice object. */
 async function choose(question, choices) {
   const list = choices.map((c, i) => `  ${i + 1}. ${c.label}`).join('\n');
   speak(`${question}\n${list}\nType a number and press Enter.`);
@@ -81,49 +72,7 @@ async function choose(question, choices) {
   }
 }
 
-// ─── IronClaw installation ─────────────────────────────────────────────────────
-
-const INSTALLER_BASE =
-  'https://github.com/nearai/ironclaw/releases/latest/download';
-
-function isIronclawInstalled() {
-  const r = spawnSync('ironclaw', ['--version'], { stdio: 'pipe' });
-  return r.status === 0;
-}
-
-function installIronclaw() {
-  if (PLATFORM === 'win32') {
-    // PowerShell one-liner from the official README
-    execSync(
-      `powershell -NoProfile -Command "irm ${INSTALLER_BASE}/ironclaw-installer.ps1 | iex"`,
-      { stdio: 'inherit', timeout: 120_000 }
-    );
-  } else if (PLATFORM === 'darwin') {
-    // Try Homebrew first (handles PATH reliably), fall back to shell installer
-    const brew = spawnSync('brew', ['--version'], { stdio: 'pipe' });
-    if (brew.status === 0) {
-      execSync('brew install ironclaw', { stdio: 'inherit', timeout: 120_000 });
-    } else {
-      execSync(
-        `curl --proto '=https' --tlsv1.2 -LsSf ${INSTALLER_BASE}/ironclaw-installer.sh | sh`,
-        { stdio: 'inherit', timeout: 120_000 }
-      );
-    }
-  } else {
-    execSync(
-      `curl --proto '=https' --tlsv1.2 -LsSf ${INSTALLER_BASE}/ironclaw-installer.sh | sh`,
-      { stdio: 'inherit', timeout: 120_000 }
-    );
-  }
-}
-
-// ─── IronClaw config helpers ───────────────────────────────────────────────────
-// IronClaw reads config from env vars, which can be persisted in
-// ~/.ironclaw/.env (loaded by dotenvy at startup).
-
-function getIronclawEnvPath() {
-  return path.join(os.homedir(), '.ironclaw', '.env');
-}
+// ─── Common helpers ────────────────────────────────────────────────────────────
 
 function readEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -139,150 +88,294 @@ function readEnvFile(filePath) {
   return vars;
 }
 
-function writeEnvFile(filePath, vars) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const lines = Object.entries(vars).map(([k, v]) => `${k}=${v}`);
-  // Preserve existing keys not touched by AllyClaw
-  fs.writeFileSync(filePath, lines.join('\n') + '\n', 'utf8');
+function readJsonConfig(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); }
+  catch { return null; }
 }
 
-function mergeEnv(updates) {
-  const envPath = getIronclawEnvPath();
-  // Back up if exists
-  if (fs.existsSync(envPath)) {
-    const backup = `${envPath}.ally-backup-${Date.now()}`;
-    fs.copyFileSync(envPath, backup);
+function backupConfig(filePath) {
+  if (fs.existsSync(filePath)) {
+    const backup = `${filePath}.ally-backup-${Date.now()}`;
+    fs.copyFileSync(filePath, backup);
     speak(`Backed up existing config to ${path.basename(backup)}.`);
+    return true;
   }
+  return false;
+}
+
+// ─── OpenClaw (TypeScript) ────────────────────────────────────────────────────
+
+function isOpenClawInstalled() {
+  const r = spawnSync('npx', ['openclaw', '--version'], { stdio: 'pipe' });
+  return r.status === 0;
+}
+
+function installOpenClaw() {
+  speak('Installing OpenClaw via npm. This may take a few minutes.');
+  execSync('npm install -g openclaw@latest', { stdio: 'inherit', timeout: 180_000 });
+}
+
+function getOpenClawConfigPath() {
+  return path.join(os.homedir(), '.openclaw', 'openclaw.json');
+}
+
+function configureOpenClaw(ttsProvider, edgeVoice) {
+  const configPath = getOpenClawConfigPath();
+  const dir = path.dirname(configPath);
+  fs.mkdirSync(dir, { recursive: true });
+
+  backupConfig(configPath);
+
+  const existing = readJsonConfig(configPath) || {};
+  const updates = {
+    messages: {
+      tts: {
+        auto: 'always',
+        mode: 'final',
+        provider: ttsProvider,
+      },
+    },
+  };
+
+  if (ttsProvider === 'edge') {
+    updates.messages.tts.edge = {
+      enabled: true,
+      voice: edgeVoice,
+    };
+  }
+
+  const merged = JSON.parse(JSON.stringify(existing)); // deep clone base
+  const merge = (target, source) => {
+    for (const key of Object.keys(source)) {
+      if (
+        source[key] !== null &&
+        typeof source[key] === 'object' &&
+        !Array.isArray(source[key]) &&
+        typeof target[key] === 'object' &&
+        target[key] !== null
+      ) {
+        merge(target[key], source[key]);
+      } else {
+        target[key] = source[key];
+      }
+    }
+  };
+  merge(merged, updates);
+
+  fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf8');
+  return configPath;
+}
+
+// ─── IronClaw (Rust) ──────────────────────────────────────────────────────────
+
+const IRONCLAW_INSTALLER = 'https://github.com/nearai/ironclaw/releases/latest/download';
+
+function isIronClawInstalled() {
+  const r = spawnSync('ironclaw', ['--version'], { stdio: 'pipe' });
+  return r.status === 0;
+}
+
+function installIronClaw() {
+  if (PLATFORM === 'win32') {
+    execSync(
+      `powershell -NoProfile -Command "irm ${IRONCLAW_INSTALLER}/ironclaw-installer.ps1 | iex"`,
+      { stdio: 'inherit', timeout: 120_000 }
+    );
+  } else if (PLATFORM === 'darwin') {
+    const brew = spawnSync('brew', ['--version'], { stdio: 'pipe' });
+    if (brew.status === 0) {
+      execSync('brew install ironclaw', { stdio: 'inherit', timeout: 120_000 });
+    } else {
+      execSync(
+        `curl --proto '=https' --tlsv1.2 -LsSf ${IRONCLAW_INSTALLER}/ironclaw-installer.sh | sh`,
+        { stdio: 'inherit', timeout: 120_000 }
+      );
+    }
+  } else {
+    execSync(
+      `curl --proto '=https' --tlsv1.2 -LsSf ${IRONCLAW_INSTALLER}/ironclaw-installer.sh | sh`,
+      { stdio: 'inherit', timeout: 120_000 }
+    );
+  }
+}
+
+function getIronClawEnvPath() {
+  return path.join(os.homedir(), '.ironclaw', '.env');
+}
+
+function configureIronClaw(provider, apiKey) {
+  const envPath = getIronClawEnvPath();
+  fs.mkdirSync(path.dirname(envPath), { recursive: true });
+
+  backupConfig(envPath);
+
   const existing = readEnvFile(envPath);
-  writeEnvFile(envPath, { ...existing, ...updates });
+  const updates = { LLM_BACKEND: provider };
+  if (apiKey) {
+    if (provider === 'anthropic') updates.ANTHROPIC_API_KEY = apiKey;
+    else if (provider === 'openai') updates.OPENAI_API_KEY = apiKey;
+  }
+
+  fs.writeFileSync(
+    envPath,
+    Object.entries({ ...existing, ...updates })
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n') + '\n',
+    'utf8'
+  );
+  return envPath;
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
   speak(
-    'Welcome to AllyClaw. This script will install and configure IronClaw, ' +
-    'an open-source AI assistant, with accessibility settings for visually impaired users. ' +
-    'Every step will be announced aloud.'
+    'Welcome to AllyClaw. This script will set up an accessible AI assistant ' +
+    'for visually impaired users. Every step will be announced aloud.'
   );
 
-  // ── Language / voice preference ──
+  // ── Select project ──
+  const project = await choose(
+    'Which project would you like to set up?',
+    [
+      {
+        label: 'OpenClaw (TypeScript) — TTS already supported, more features',
+        value: 'openclaw',
+      },
+      {
+        label: 'IronClaw (Rust) — faster, smaller, easier to audit',
+        value: 'ironclaw',
+      },
+    ]
+  );
+  speak(`Selected ${project.value === 'openclaw' ? 'OpenClaw' : 'IronClaw'}.`);
+
+  // ── Language ──
   const langChoice = await choose(
     'What language do you prefer for voice output?',
     [
-      { label: 'English',            value: 'en', envVoice: 'en-US-AriaNeural' },
-      { label: 'Chinese (Mainland)', value: 'zh', envVoice: 'zh-CN-XiaoxiaoNeural' },
-      { label: 'Chinese (Taiwan)',   value: 'zh-TW', envVoice: 'zh-TW-HsiaoYuNeural' },
-      { label: 'Japanese',           value: 'ja', envVoice: 'ja-JP-NanamiNeural' },
+      { label: 'English',            value: 'en', edgeVoice: 'en-US-AriaNeural' },
+      { label: 'Chinese (Mainland)', value: 'zh', edgeVoice: 'zh-CN-XiaoxiaoNeural' },
+      { label: 'Chinese (Taiwan)',   value: 'zh-TW', edgeVoice: 'zh-TW-HsiaoYuNeural' },
+      { label: 'Japanese',           value: 'ja', edgeVoice: 'ja-JP-NanamiNeural' },
     ]
   );
   speak(`Language set to ${langChoice.label}.`);
 
-  // ── Install IronClaw ──
-  if (isIronclawInstalled()) {
-    const version = spawnSync('ironclaw', ['--version'], { stdio: 'pipe' })
-      .stdout?.toString().trim() ?? 'unknown';
-    speak(`IronClaw is already installed. Version: ${version}.`);
+  // ── Project-specific setup ──
+  if (project.value === 'openclaw') {
+    await setupOpenClaw(langChoice);
   } else {
-    speak('IronClaw is not installed. Installing now. This may take a minute.');
-    try {
-      installIronclaw();
-      speak('IronClaw installed successfully.');
-    } catch (e) {
-      speak(
-        'Installation failed. ' +
-        'On Windows, run: irm https://github.com/nearai/ironclaw/releases/latest/download/ironclaw-installer.ps1 | iex  ' +
-        'On macOS or Linux, run: curl --proto https --tlsv1.2 -LsSf https://github.com/nearai/ironclaw/releases/latest/download/ironclaw-installer.sh | sh  ' +
-        'Then run this script again.'
-      );
+    await setupIronClaw();
+  }
+
+  speak('Setup complete. Thank you!');
+  rl.close();
+}
+
+async function setupOpenClaw(lang) {
+  // Install
+  if (isOpenClawInstalled()) {
+    const version = spawnSync('npx', ['openclaw', '--version'], { stdio: 'pipe' })
+      .stdout?.toString().trim() ?? 'unknown';
+    speak(`OpenClaw is already installed. Version: ${version}.`);
+  } else {
+    speak('OpenClaw is not installed. Installing now.');
+    try { installOpenClaw(); }
+    catch {
+      speak('Installation failed. Run: npm install -g openclaw@latest');
       process.exit(1);
     }
   }
 
-  // ── LLM provider ──
-  speak(
-    'IronClaw needs a language model to power the AI assistant. ' +
-    'NEAR AI is the default and requires no separate API key — ' +
-    'it opens a browser for a one-time login.'
-  );
-  const providerChoice = await choose(
-    'Which AI provider would you like to use?',
+  // TTS provider
+  const ttsProvider = await choose(
+    'Which text-to-speech provider for agent responses?',
     [
-      { label: 'NEAR AI (default, free, browser login)',   value: 'nearai',    envKey: null },
-      { label: 'Anthropic Claude (requires API key)',      value: 'anthropic', envKey: 'ANTHROPIC_API_KEY' },
-      { label: 'OpenAI GPT (requires API key)',            value: 'openai',    envKey: 'OPENAI_API_KEY' },
-      { label: 'Ollama — local inference, no API key',    value: 'ollama',    envKey: null },
+      { label: 'Microsoft Edge TTS — free, no API key required', value: 'edge' },
+      { label: 'OpenAI TTS — requires OpenAI API key', value: 'openai' },
+      { label: 'ElevenLabs — requires API key', value: 'elevenlabs' },
+    ]
+  );
+  speak(`Selected ${ttsProvider.label}.`);
+
+  // Write config
+  speak('Writing accessibility configuration.');
+  const configPath = configureOpenClaw(ttsProvider.value, lang.edgeVoice);
+  speak(`Configuration written to ${configPath}.`);
+
+  // Onboard
+  const runOnboard = await confirm('Run the OpenClaw onboarding wizard now?');
+  if (runOnboard) {
+    speak('Launching OpenClaw onboarding.');
+    try { execSync('npx openclaw onboard', { stdio: 'inherit' }); }
+    catch { speak('Onboarding exited.'); }
+  }
+}
+
+async function setupIronClaw() {
+  // Install
+  if (isIronClawInstalled()) {
+    const version = spawnSync('ironclaw', ['--version'], { stdio: 'pipe' })
+      .stdout?.toString().trim() ?? 'unknown';
+    speak(`IronClaw is already installed. Version: ${version}.`);
+  } else {
+    speak('IronClaw is not installed. Installing now.');
+    try { installIronClaw(); }
+    catch {
+      speak('Installation failed. See the README for manual install instructions.');
+      process.exit(1);
+    }
+  }
+
+  // LLM provider
+  const provider = await choose(
+    'Which AI provider?',
+    [
+      { label: 'NEAR AI (default, free, browser login)', value: 'nearai' },
+      { label: 'Anthropic Claude (requires API key)', value: 'anthropic' },
+      { label: 'OpenAI GPT (requires API key)', value: 'openai' },
+      { label: 'Ollama (local, no API key)', value: 'ollama' },
     ]
   );
 
-  const envUpdates = { LLM_BACKEND: providerChoice.value };
-
-  if (providerChoice.envKey) {
-    const key = await ask(
-      `Enter your ${providerChoice.label.split(' ')[0]} API key. ` +
-      `It will be stored in ${getIronclawEnvPath()}.`
-    );
-    if (key) {
-      envUpdates[providerChoice.envKey] = key;
-    } else {
-      speak('No key entered. You can add it later to ~/.ironclaw/.env');
-    }
+  let apiKey = '';
+  if (provider.value === 'anthropic' || provider.value === 'openai') {
+    apiKey = await ask(`Enter your ${provider.value === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key.`);
   }
 
-  // ── Write env config ──
+  // Write config
   speak('Writing configuration.');
-  mergeEnv(envUpdates);
-  speak(`Configuration written to ${getIronclawEnvPath()}.`);
+  const configPath = configureIronClaw(provider.value, apiKey);
+  speak(`Configuration written to ${configPath}.`);
 
-  // ── TTS note ──
+  // TTS note
   speak(
-    'Note on text-to-speech: native TTS output for agent responses is the core feature ' +
-    'AllyClaw is adding to IronClaw. It is currently in development. ' +
-    'Once available, all agent replies will be read aloud automatically.'
+    'Note: Text-to-speech for IronClaw is currently in development. ' +
+    'Once available, agent responses will be read aloud automatically.'
   );
 
-  // ── Run ironclaw onboard ──
-  const runOnboard = await confirm(
-    'Would you like to run the IronClaw setup wizard now? ' +
-    'It will guide you through messaging channel configuration. '
-  );
+  // Onboard
+  const runOnboard = await confirm('Run the IronClaw onboarding wizard now?');
   if (runOnboard) {
-    speak('Launching IronClaw onboarding wizard. Follow the on-screen prompts.');
-    try {
-      execSync('ironclaw onboard', { stdio: 'inherit' });
-    } catch {
-      speak('Onboarding exited. You can run  ironclaw onboard  at any time to continue.');
-    }
+    speak('Launching IronClaw onboarding.');
+    try { execSync('ironclaw onboard', { stdio: 'inherit' }); }
+    catch { speak('Onboarding exited.'); }
   }
 
-  // ── Start service ──
-  const startService = await confirm(
-    'Start the IronClaw service in the background now?'
-  );
+  // Start service
+  const startService = await confirm('Start the IronClaw service in the background?');
   if (startService) {
-    speak('Starting IronClaw service.');
     try {
       execSync('ironclaw service start', { stdio: 'inherit' });
-      speak('IronClaw is running.');
-    } catch {
-      speak('Could not start the service. Run  ironclaw service start  manually.');
-    }
+      speak('Service started.');
+    } catch { speak('Could not start service.'); }
   }
-
-  // ── Done ──
-  speak(
-    'AllyClaw setup complete. ' +
-    'IronClaw is configured with your chosen AI provider. ' +
-    'Send a message through any channel you set up to talk to your assistant. ' +
-    'For help, see the README or open an issue on GitHub. Thank you.'
-  );
-
-  rl.close();
 }
 
 main().catch(err => {
-  speak('An unexpected error occurred: ' + err.message);
+  speak('Error: ' + err.message);
   console.error(err);
   rl.close();
   process.exit(1);
