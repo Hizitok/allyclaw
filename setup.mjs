@@ -8,6 +8,10 @@
  *
  * Platforms: Windows, macOS, Linux
  * Requirements: Node.js >= 18
+ *
+ * Usage:
+ *   node setup.mjs                 # Interactive mode
+ *   node setup.mjs --non-interactive --project openclaw --lang en
  */
 
 import { execSync, spawnSync } from 'child_process';
@@ -15,6 +19,78 @@ import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+// ─── CLI Arguments ────────────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+const CLI = {
+  nonInteractive: args.includes('--non-interactive'),
+  project: getArg('--project') || getArg('-p'),
+  lang: getArg('--lang') || getArg('-l'),
+  ttsProvider: getArg('--tts-provider'),
+  skipOnboard: args.includes('--skip-onboard'),
+  skipInstall: args.includes('--skip-install'),
+  help: args.includes('--help') || args.includes('-h'),
+};
+
+function getArg(flag) {
+  const idx = args.indexOf(flag);
+  if (idx === -1 || idx + 1 >= args.length) return null;
+  return args[idx + 1];
+}
+
+if (CLI.help) {
+  console.log(`
+AllyClaw Setup Script
+
+Usage: node setup.mjs [options]
+
+Options:
+  --non-interactive      Run without prompts (for CI/CD)
+  -p, --project <name>   openclaw or ironclaw
+  -l, --lang <code>     Language: en, zh, zh-TW, ja, ko, fr, de, es, pt, ru
+  --tts-provider <name>  TTS provider: edge, openai, elevenlabs (openclaw only)
+  --skip-onboard         Skip the onboarding wizard
+  --skip-install        Skip installation if already present
+  -h, --help            Show this help
+
+Examples:
+  node setup.mjs
+  node setup.mjs --non-interactive --project openclaw --lang en
+  node setup.mjs -p ironclaw -l zh --skip-onboard
+`);
+  process.exit(0);
+}
+
+const VALID_PROJECTS = ['openclaw', 'ironclaw'];
+const VALID_LANGS = ['en', 'zh', 'zh-TW', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru'];
+const VALID_TTS = ['edge', 'openai', 'elevenlabs'];
+
+const LANG_MAP = {
+  'en': 'en-US-AriaNeural',
+  'zh': 'zh-CN-XiaoxiaoNeural',
+  'zh-TW': 'zh-TW-HsiaoYuNeural',
+  'ja': 'ja-JP-NanamiNeural',
+  'ko': 'ko-KR-SunHiNeural',
+  'fr': 'fr-FR-DeniseNeural',
+  'de': 'de-DE-KatjaNeural',
+  'es': 'es-ES-ElviraNeural',
+  'pt': 'pt-BR-FranciscaNeural',
+  'ru': 'ru-RU-SvetlanaNeural',
+};
+
+const LANGUAGE_LABELS = {
+  'en': 'English',
+  'zh': 'Chinese (Simplified)',
+  'zh-TW': 'Chinese (Traditional)',
+  'ja': 'Japanese',
+  'ko': 'Korean',
+  'fr': 'French',
+  'de': 'German',
+  'es': 'Spanish',
+  'pt': 'Portuguese',
+  'ru': 'Russian',
+};
 
 // ─── Platform TTS ─────────────────────────────────────────────────────────────
 
@@ -230,44 +306,66 @@ function configureIronClaw(provider, apiKey) {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Validate CLI arguments in non-interactive mode
+  if (CLI.nonInteractive) {
+    if (CLI.project && !VALID_PROJECTS.includes(CLI.project)) {
+      console.error(`Invalid --project. Choose from: ${VALID_PROJECTS.join(', ')}`);
+      process.exit(1);
+    }
+    if (CLI.lang && !VALID_LANGS.includes(CLI.lang)) {
+      console.error(`Invalid --lang. Choose from: ${VALID_LANGS.join(', ')}`);
+      process.exit(1);
+    }
+    if (CLI.ttsProvider && !VALID_TTS.includes(CLI.ttsProvider)) {
+      console.error(`Invalid --tts-provider. Choose from: ${VALID_TTS.join(', ')}`);
+      process.exit(1);
+    }
+  }
+
   speak(
     'Welcome to AllyClaw. This script will set up an accessible AI assistant ' +
     'for visually impaired users. Every step will be announced aloud.'
   );
 
   // ── Select project ──
-  const project = await choose(
-    'Which project would you like to set up?',
-    [
-      {
-        label: 'OpenClaw (TypeScript) — TTS already supported, more features',
-        value: 'openclaw',
-      },
-      {
-        label: 'IronClaw (Rust) — faster, smaller, easier to audit',
-        value: 'ironclaw',
-      },
-    ]
-  );
-  speak(`Selected ${project.value === 'openclaw' ? 'OpenClaw' : 'IronClaw'}.`);
+  let project;
+  if (CLI.nonInteractive && CLI.project) {
+    project = { value: CLI.project, label: CLI.project };
+    speak(`Selected ${CLI.project === 'openclaw' ? 'OpenClaw' : 'IronClaw'}.`);
+  } else {
+    project = await choose(
+      'Which project would you like to set up?',
+      [
+        { label: 'OpenClaw (TypeScript) — TTS already supported', value: 'openclaw' },
+        { label: 'IronClaw (Rust) — faster, smaller, easier to audit', value: 'ironclaw' },
+      ]
+    );
+    speak(`Selected ${project.value === 'openclaw' ? 'OpenClaw' : 'IronClaw'}.`);
+  }
 
   // ── Language ──
-  const langChoice = await choose(
-    'What language do you prefer for voice output?',
-    [
-      { label: 'English',            value: 'en', edgeVoice: 'en-US-AriaNeural' },
-      { label: 'Chinese (Simplified)', value: 'zh', edgeVoice: 'zh-CN-XiaoxiaoNeural' },
-      { label: 'Chinese (Traditional)', value: 'zh-TW', edgeVoice: 'zh-TW-HsiaoYuNeural' },
-      { label: 'Japanese',           value: 'ja', edgeVoice: 'ja-JP-NanamiNeural' },
-      { label: 'Korean',             value: 'ko', edgeVoice: 'ko-KR-SunHiNeural' },
-      { label: 'French',            value: 'fr', edgeVoice: 'fr-FR-DeniseNeural' },
-      { label: 'German',            value: 'de', edgeVoice: 'de-DE-KatjaNeural' },
-      { label: 'Spanish',           value: 'es', edgeVoice: 'es-ES-ElviraNeural' },
-      { label: 'Portuguese',        value: 'pt', edgeVoice: 'pt-BR-FranciscaNeural' },
-      { label: 'Russian',           value: 'ru', edgeVoice: 'ru-RU-SvetlanaNeural' },
-    ]
-  );
-  speak(`Language set to ${langChoice.label}.`);
+  let langChoice;
+  if (CLI.nonInteractive && CLI.lang) {
+    langChoice = { value: CLI.lang, label: LANGUAGE_LABELS[CLI.lang], edgeVoice: LANG_MAP[CLI.lang] };
+    speak(`Language set to ${langChoice.label}.`);
+  } else {
+    langChoice = await choose(
+      'What language do you prefer for voice output?',
+      [
+        { label: 'English',            value: 'en', edgeVoice: 'en-US-AriaNeural' },
+        { label: 'Chinese (Simplified)', value: 'zh', edgeVoice: 'zh-CN-XiaoxiaoNeural' },
+        { label: 'Chinese (Traditional)', value: 'zh-TW', edgeVoice: 'zh-TW-HsiaoYuNeural' },
+        { label: 'Japanese',           value: 'ja', edgeVoice: 'ja-JP-NanamiNeural' },
+        { label: 'Korean',             value: 'ko', edgeVoice: 'ko-KR-SunHiNeural' },
+        { label: 'French',            value: 'fr', edgeVoice: 'fr-FR-DeniseNeural' },
+        { label: 'German',            value: 'de', edgeVoice: 'de-DE-KatjaNeural' },
+        { label: 'Spanish',           value: 'es', edgeVoice: 'es-ES-ElviraNeural' },
+        { label: 'Portuguese',        value: 'pt', edgeVoice: 'pt-BR-FranciscaNeural' },
+        { label: 'Russian',           value: 'ru', edgeVoice: 'ru-RU-SvetlanaNeural' },
+      ]
+    );
+    speak(`Language set to ${langChoice.label}.`);
+  }
 
   // ── Project-specific setup ──
   if (project.value === 'openclaw') {
@@ -277,34 +375,40 @@ async function main() {
   }
 
   speak('Setup complete. Thank you!');
-  rl.close();
+  if (!CLI.nonInteractive) rl.close();
 }
 
 async function setupOpenClaw(lang) {
   // Install
-  if (isOpenClawInstalled()) {
-    const version = spawnSync('npx', ['openclaw', '--version'], { stdio: 'pipe' })
-      .stdout?.toString().trim() ?? 'unknown';
-    speak(`OpenClaw is already installed. Version: ${version}.`);
-  } else {
+  if (!CLI.skipInstall && !isOpenClawInstalled()) {
     speak('OpenClaw is not installed. Installing now.');
     try { installOpenClaw(); }
     catch {
       speak('Installation failed. Run: npm install -g openclaw@latest');
       process.exit(1);
     }
+  } else if (isOpenClawInstalled()) {
+    const version = spawnSync('npx', ['openclaw', '--version'], { stdio: 'pipe' })
+      .stdout?.toString().trim() ?? 'unknown';
+    speak(`OpenClaw is already installed. Version: ${version}.`);
   }
 
   // TTS provider
-  const ttsProvider = await choose(
-    'Which text-to-speech provider for agent responses?',
-    [
-      { label: 'Microsoft Edge TTS — free, no API key required', value: 'edge' },
-      { label: 'OpenAI TTS — requires OpenAI API key', value: 'openai' },
-      { label: 'ElevenLabs — requires API key', value: 'elevenlabs' },
-    ]
-  );
-  speak(`Selected ${ttsProvider.label}.`);
+  let ttsProvider;
+  if (CLI.nonInteractive && CLI.ttsProvider) {
+    ttsProvider = { value: CLI.ttsProvider, label: CLI.ttsProvider };
+    speak(`Selected ${CLI.ttsProvider} TTS.`);
+  } else {
+    ttsProvider = await choose(
+      'Which text-to-speech provider for agent responses?',
+      [
+        { label: 'Microsoft Edge TTS — free, no API key required', value: 'edge' },
+        { label: 'OpenAI TTS — requires OpenAI API key', value: 'openai' },
+        { label: 'ElevenLabs — requires API key', value: 'elevenlabs' },
+      ]
+    );
+    speak(`Selected ${ttsProvider.label}.`);
+  }
 
   // Write config
   speak('Writing accessibility configuration.');
@@ -312,49 +416,62 @@ async function setupOpenClaw(lang) {
   speak(`Configuration written to ${configPath}.`);
 
   // Onboard
-  const runOnboard = await confirm('Run the OpenClaw onboarding wizard now?');
-  if (runOnboard) {
-    speak('Launching OpenClaw onboarding.');
-    try { execSync('npx openclaw onboard', { stdio: 'inherit' }); }
-    catch { speak('Onboarding exited.'); }
+  if (!CLI.skipOnboard) {
+    const runOnboard = CLI.nonInteractive || await confirm('Run the OpenClaw onboarding wizard now?');
+    if (runOnboard) {
+      speak('Launching OpenClaw onboarding.');
+      try { execSync('npx openclaw onboard', { stdio: 'inherit' }); }
+      catch { speak('Onboarding exited.'); }
+    }
   }
 }
 
 async function setupIronClaw() {
   // Install
-  if (isIronClawInstalled()) {
-    const version = spawnSync('ironclaw', ['--version'], { stdio: 'pipe' })
-      .stdout?.toString().trim() ?? 'unknown';
-    speak(`IronClaw is already installed. Version: ${version}.`);
-  } else {
+  if (!CLI.skipInstall && !isIronClawInstalled()) {
     speak('IronClaw is not installed. Installing now.');
     try { installIronClaw(); }
     catch {
       speak('Installation failed. See the README for manual install instructions.');
       process.exit(1);
     }
+  } else if (isIronClawInstalled()) {
+    const version = spawnSync('ironclaw', ['--version'], { stdio: 'pipe' })
+      .stdout?.toString().trim() ?? 'unknown';
+    speak(`IronClaw is already installed. Version: ${version}.`);
   }
 
-  // LLM provider
-  const provider = await choose(
-    'Which AI provider?',
-    [
-      { label: 'NEAR AI (default, free, browser login)', value: 'nearai' },
-      { label: 'Anthropic Claude (requires API key)', value: 'anthropic' },
-      { label: 'OpenAI GPT (requires API key)', value: 'openai' },
-      { label: 'Ollama (local, no API key)', value: 'ollama' },
-    ]
+  // LLM provider - non-interactive defaults to nearai
+  const provider = CLI.nonInteractive
+    ? { value: 'nearai', label: 'NEAR AI' }
+    : await choose(
+      'Which AI provider?',
+      [
+        { label: 'NEAR AI (default, free, browser login)', value: 'nearai' },
+        { label: 'Anthropic Claude (requires API key)', value: 'anthropic' },
+        { label: 'OpenAI GPT (requires API key)', value: 'openai' },
+        { label: 'Ollama (local, no API key)', value: 'ollama' },
+      ]
+    );
+
+  // Note: API key cannot be passed via CLI for security reasons
+  if (!CLI.nonInteractive && (provider.value === 'anthropic' || provider.value === 'openai')) {
+    const apiKey = await ask(`Enter your ${provider.value === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key.`);
+    // Write config
+    speak('Writing configuration.');
+    const configPath = configureIronClaw(provider.value, apiKey);
+    speak(`Configuration written to ${configPath}.`);
+  } else if (CLI.nonInteractive) {
+    speak('Writing configuration (API key required for anthropic/openai - run interactively to add).');
+    const configPath = configureIronClaw(provider.value, '');
+    speak(`Configuration written to ${configPath}.`);
+  }
+
+  // TTS note
+  speak(
+    'Note: Text-to-speech for IronClaw is currently in development. ' +
+    'Once available, agent responses will be read aloud automatically.'
   );
-
-  let apiKey = '';
-  if (provider.value === 'anthropic' || provider.value === 'openai') {
-    apiKey = await ask(`Enter your ${provider.value === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key.`);
-  }
-
-  // Write config
-  speak('Writing configuration.');
-  const configPath = configureIronClaw(provider.value, apiKey);
-  speak(`Configuration written to ${configPath}.`);
 
   // TTS note
   speak(
